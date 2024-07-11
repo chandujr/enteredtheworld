@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from io import BytesIO
 import random
 import json
+from anthropic import Anthropic
 
 # Load environment variables
 load_dotenv()
@@ -16,6 +17,7 @@ client_id = os.getenv("CLIENT_ID")
 client_secret = os.getenv("CLIENT_SECRET")
 access_token = os.getenv("ACCESS_TOKEN")
 access_token_secret = os.getenv("ACCESS_TOKEN_SECRET")
+anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 
 # Authenticate with Twitter API v2
 client = tweepy.Client(
@@ -75,8 +77,8 @@ def get_notable_birth():
             tweeted_people.add(text)
             save_tweeted_people(tweeted_people)
             
-            return f"On this day in {year}, {text} entered the world.\n\n#BornToday #OnThisDay", image_url
-    return None, None
+            return f"On this day in {year}, {text} entered the world.", image_url, text
+    return None, None, None
 
 def download_image(url):
     print("Downloading image...")
@@ -87,11 +89,37 @@ def download_image(url):
         print(f"Failed to download image. Status code: {response.status_code}")
         return None
 
+def fetch_fact_with_anthropic(text):
+    client = Anthropic(
+        api_key=anthropic_api_key
+    )
+
+    message = client.messages.create(
+    max_tokens=1024,
+    temperature=0.1,
+    system="Respond only with the tid-bit.",
+    messages=[
+        {
+            "role": "user",
+            "content": f"Tell me the most interesting tid-bit about {text} in around 150 characters. Use pronouns to refer to this person, not name.",
+        }
+    ],
+    model="claude-3-5-sonnet-20240620",
+    )
+    print(f"Anthropic response: {message.content}")
+    return message.content[0].text
+
+def create_tweet(birth_info, summary):
+    tweet = f"{birth_info}\n\n{summary}\n\n#BornToday #OnThisDay"
+    if len(tweet) > 280:
+        tweet = tweet[:277] + "..."
+    return tweet
+
 def tweet_birth_with_image():
     print("Getting Wiki info...")
-    birth_info, image_url = get_notable_birth()
+    birth_info, image_url, text = get_notable_birth()
     
-    if birth_info and image_url:
+    if birth_info and image_url and text:
         media_ids = []
         image = download_image(image_url)
         if image:
@@ -108,8 +136,10 @@ def tweet_birth_with_image():
                 return tweet_birth_with_image()
             
             try:
-                response = client.create_tweet(text=birth_info, media_ids=media_ids)
-                print(f"Tweeted: {birth_info}")
+                fact = fetch_fact_with_anthropic(text)
+                tweet_text = create_tweet(birth_info, fact)
+                response = client.create_tweet(text=tweet_text, media_ids=media_ids)
+                print(f"Tweeted: {tweet_text}")
                 print("Tweet includes an image.")
             except tweepy.TweepError as e:
                 print(f"Error posting tweet: {e}")
@@ -124,9 +154,11 @@ def main():
     tweet_birth_with_image()
 
 # def test_tweet_birth_with_image():
-#     birth_info, image_url = get_notable_birth()
-#     if birth_info:
-#         print(f"Would tweet: {birth_info}")
+#     birth_info, image_url, text = get_notable_birth()
+#     if birth_info and image_url and text:
+#         fact = fetch_fact_with_anthropic(text)
+#         tweet_text = create_tweet(birth_info, fact)
+#         print(f"Would tweet: {tweet_text}")
 #         print(f"Image URL: {image_url}")
 #     else:
 #         print("No birth information found for today.")
