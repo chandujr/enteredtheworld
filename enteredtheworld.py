@@ -55,19 +55,19 @@ def get_notable_birth():
 
     today = datetime.now()
     date = today.strftime("%m/%d")
-    
+
     # Using the Wikipedia API to get events for the day
     url = f"https://en.wikipedia.org/api/rest_v1/feed/onthisday/births/{date}"
     response = requests.get(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:126.0) Gecko/20100101 Firefox/126.0"})
     data = response.json()
-    
+
     if data and 'births' in data:
         # Filter events to only include those with images
         events_with_images = [event for event in data['births']
                               if 'pages' in event and event['pages']
                               and 'originalimage' in event['pages'][0]
                               and event['text'] not in tweeted_people]
-        
+
         if events_with_images:
             event = random.choice(events_with_images)
             year = event['year']
@@ -76,7 +76,7 @@ def get_notable_birth():
 
             tweeted_people.add(text)
             save_tweeted_people(tweeted_people)
-            
+
             return f"On this day in {year}, {text} entered the world.", image_url, text
     return None, None, None
 
@@ -89,11 +89,12 @@ def download_image(url):
         print(f"Failed to download image. Status code: {response.status_code}")
         return None
 
-def fetch_fact_with_anthropic(text):
+def fetch_fact_with_anthropic(text, max_length=150):
     client = Anthropic(
         api_key=anthropic_api_key
     )
 
+    print(f"Fetching fact with {max_length} characters...")
     message = client.messages.create(
     max_tokens=1024,
     temperature=0.1,
@@ -101,7 +102,7 @@ def fetch_fact_with_anthropic(text):
     messages=[
         {
             "role": "user",
-            "content": f"Tell me the most interesting tid-bit about {text} in around 150 characters. Use pronouns to refer to this person, not name.",
+            "content": f"Tell me the most interesting tid-bit about {text} in around {max_length} characters. Use pronouns to refer to this person, not name.",
         }
     ],
     model="claude-3-5-sonnet-20240620",
@@ -109,16 +110,24 @@ def fetch_fact_with_anthropic(text):
     print(f"Anthropic response: {message.content}")
     return message.content[0].text
 
-def create_tweet(birth_info, summary):
-    tweet = f"{birth_info}\n\n{summary}\n\n#BornToday #OnThisDay"
-    if len(tweet) > 280:
-        tweet = tweet[:277] + "..."
-    return tweet
+def create_tweet(birth_info, text):
+    max_summary_length = 280 - len(birth_info) - len("\n\n\n\n#BornToday #OnThisDay")
+    while True:
+        summary = fetch_fact_with_anthropic(text, max_summary_length)
+        tweet = f"{birth_info}\n\n{summary}\n\n#BornToday #OnThisDay"
+
+        if len(tweet) <= 280:
+            print("Generated fact is within 280 characters.")
+            return tweet
+
+        # If still too long, reduce max_summary_length and try again
+        max_summary_length -= 10  # Reduce by 10 characters each iteration
+        print(f"Tweet too long. Retrying fact gen with {max_summary_length} characters")
 
 def tweet_birth_with_image():
     print("Getting Wiki info...")
     birth_info, image_url, text = get_notable_birth()
-    
+
     if birth_info and image_url and text:
         media_ids = []
         image = download_image(image_url)
@@ -134,14 +143,13 @@ def tweet_birth_with_image():
             except Exception as e:
                 print(f"Error handling image: {e}. Retrying with another person.")
                 return tweet_birth_with_image()
-            
+
             try:
-                fact = fetch_fact_with_anthropic(text)
-                tweet_text = create_tweet(birth_info, fact)
+                tweet_text = create_tweet(birth_info, text)
                 response = client.create_tweet(text=tweet_text, media_ids=media_ids)
                 print(f"Tweeted: {tweet_text}")
                 print("Tweet includes an image.")
-            except tweepy.TweepError as e:
+            except tweepy.errors.TweepError as e:
                 print(f"Error posting tweet: {e}")
         else:
             print("Failed to download image. Retrying with another person.")
@@ -152,12 +160,12 @@ def tweet_birth_with_image():
 
 def main():
     tweet_birth_with_image()
+    # test_tweet_birth_with_image()
 
 # def test_tweet_birth_with_image():
 #     birth_info, image_url, text = get_notable_birth()
 #     if birth_info and image_url and text:
-#         fact = fetch_fact_with_anthropic(text)
-#         tweet_text = create_tweet(birth_info, fact)
+#         tweet_text = create_tweet(birth_info, text)
 #         print(f"Would tweet: {tweet_text}")
 #         print(f"Image URL: {image_url}")
 #     else:
