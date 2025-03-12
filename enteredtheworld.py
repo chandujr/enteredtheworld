@@ -89,7 +89,7 @@ def download_image(url):
         print(f"Failed to download image. Status code: {response.status_code}")
         return None
 
-def fetch_fact_with_anthropic(text, max_length=150):
+def fetch_fact_with_anthropic(person, max_length=150):
     client = Anthropic(
         api_key=anthropic_api_key
     )
@@ -102,7 +102,7 @@ def fetch_fact_with_anthropic(text, max_length=150):
     messages=[
         {
             "role": "user",
-            "content": f"Tell me the most interesting tid-bit about {text} in around {max_length} characters. Use pronouns to refer to this person, not name.",
+            "content": f"Tell me some interesting tid-bits about {person} in around {max_length} characters. Separate the tib-bits into paragraphs with around 60 words. Consider each paragraph as a single tweet in a thread of tweets. In the first paragraph, use pronouns to refer to this person, not name. Use appropriate symbols at end of each paragraph along with thread number showing that it is part of a thread. There should be at least 3 paragraphs and maximum of 5. Design the whole text in a way so that it will be enjoyable to read as a tweet. At the end of the first paragraph, add the hash tags #BornToday #OnThisDay and the most appropriate hash tag with the name of the person. Please note that only the first 280 characters will be visible on the Twitter timeline, so the first 280 characters should attract other users to engage in the tweet. Also include relevant hashtags in between to get more reach.",
         }
     ],
     model="claude-3-7-sonnet-20250219",
@@ -110,25 +110,21 @@ def fetch_fact_with_anthropic(text, max_length=150):
     print(f"Anthropic response: {message.content}")
     return message.content[0].text
 
-def create_tweet(birth_info, text):
-    max_summary_length = 280 - len(birth_info) - len("\n\n\n\n#BornToday #OnThisDay")
-    while True:
-        summary = fetch_fact_with_anthropic(text, max_summary_length)
-        tweet = f"{birth_info}\n\n{summary}\n\n#BornToday #OnThisDay"
-
-        if len(tweet) <= 280:
-            print("Generated fact is within 280 characters.")
-            return tweet
-
-        # If still too long, reduce max_summary_length and try again
-        max_summary_length -= 10  # Reduce by 10 characters each iteration
-        print(f"Tweet too long. Retrying fact gen with {max_summary_length} characters")
+def create_tweet(birth_info, person):
+    max_facts_length = 4000
+    facts_text = fetch_fact_with_anthropic(person, max_facts_length)
+    # Split the text into paragraphs (split on empty lines)
+    paragraphs = facts_text.strip().split("\n\n")
+    # Remove any empty strings from the list (if any)
+    paragraphs = [p.strip() for p in paragraphs if p.strip()]
+    paragraphs[0] = f"{birth_info}\n\n{paragraphs[0]}"
+    return paragraphs
 
 def tweet_birth_with_image():
     print("Getting Wiki info...")
-    birth_info, image_url, text = get_notable_birth()
+    birth_info, image_url, person = get_notable_birth()
 
-    if birth_info and image_url and text:
+    if birth_info and image_url and person:
         media_ids = []
         image = download_image(image_url)
         if image:
@@ -145,10 +141,22 @@ def tweet_birth_with_image():
                 return tweet_birth_with_image()
 
             try:
-                tweet_text = create_tweet(birth_info, text)
-                response = client.create_tweet(text=tweet_text, media_ids=media_ids)
-                print(f"Tweeted: {tweet_text}")
-                print("Tweet includes an image.")
+                tweet_texts = create_tweet(birth_info, person)
+                # Get your own user ID (needed to exclude mentions)
+                me = client.get_me(user_fields=["id"])
+                user_id = me.data.id
+                previous_tweet_id = None
+                for i, text in enumerate(tweet_texts):
+                    response = client.create_tweet(
+                        text=text,
+                        in_reply_to_tweet_id=previous_tweet_id,
+                        exclude_reply_user_ids=[user_id],  # Prevents @mention
+                        media_ids=media_ids if i == 0 else None
+                    )
+                    
+                    # Update previous_tweet_id for the next iteration
+                    previous_tweet_id = response.data["id"]
+                print("Tweet posted.")
             except tweepy.errors.TweepError as e:
                 print(f"Error posting tweet: {e}")
         else:
@@ -163,10 +171,12 @@ def main():
     # test_tweet_birth_with_image()
 
 # def test_tweet_birth_with_image():
-#     birth_info, image_url, text = get_notable_birth()
-#     if birth_info and image_url and text:
-#         tweet_text = create_tweet(birth_info, text)
-#         print(f"Would tweet: {tweet_text}")
+#     birth_info, image_url, person = get_notable_birth()
+#     if birth_info and image_url and person:
+#         tweet_texts = create_tweet(birth_info, person)
+#         print("Would tweet:\n")
+#         for i, text in enumerate(tweet_texts):
+#             print(f"{text}\n")
 #         print(f"Image URL: {image_url}")
 #     else:
 #         print("No birth information found for today.")
