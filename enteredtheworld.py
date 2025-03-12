@@ -97,7 +97,7 @@ def fetch_fact_with_anthropic(text, max_length=150):
     print(f"Fetching fact with {max_length} characters...")
     message = client.messages.create(
     max_tokens=1024,
-    temperature=0.1,
+    temperature=0.2,
     system="Respond only with the tid-bit.",
     messages=[
         {
@@ -105,7 +105,7 @@ def fetch_fact_with_anthropic(text, max_length=150):
             "content": f"Tell me the most interesting tid-bit about {text} in around {max_length} characters. Use pronouns to refer to this person, not name.",
         }
     ],
-    model="claude-3-5-sonnet-20240620",
+    model="claude-3-7-sonnet-20250219",
     )
     print(f"Anthropic response: {message.content}")
     return message.content[0].text
