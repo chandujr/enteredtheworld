@@ -120,8 +120,14 @@ def create_tweet(birth_info, person):
     paragraphs[0] = f"{birth_info}\n\n{paragraphs[0]}"
     return paragraphs
 
-def tweet_birth_with_image():
+def tweet_birth_with_image(retries):
     print("Getting Wiki info...")
+    
+    retries += 1
+    if retries > 5:
+        print("Retry limit exceeded.")
+        return
+    
     birth_info, image_url, person = get_notable_birth()
 
     if birth_info and image_url and person:
@@ -138,7 +144,7 @@ def tweet_birth_with_image():
                 media_ids.append(media.media_id)
             except Exception as e:
                 print(f"Error handling image: {e}. Retrying with another person.")
-                return tweet_birth_with_image()
+                return tweet_birth_with_image(retries)
 
             try:
                 tweet_texts = create_tweet(birth_info, person)
@@ -161,13 +167,14 @@ def tweet_birth_with_image():
                 print(f"Error posting tweet: {e}")
         else:
             print("Failed to download image. Retrying with another person.")
-            return tweet_birth_with_image()
+            return tweet_birth_with_image(retries)
     else:
         print("No suitable birth information found. Retrying...")
-        return tweet_birth_with_image()
+        return tweet_birth_with_image(retries)
 
 def main():
-    tweet_birth_with_image()
+    retries = 0
+    tweet_birth_with_image(retries)
     # test_tweet_birth_with_image()
 
 # def test_tweet_birth_with_image():
