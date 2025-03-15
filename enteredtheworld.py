@@ -1,7 +1,6 @@
 import tweepy
 import requests
 from datetime import datetime, date
-import time
 import os
 from dotenv import load_dotenv
 from io import BytesIO
@@ -94,6 +93,10 @@ def download_image(url):
         return None
 
 def fetch_fact_with_anthropic(person, max_length=150):
+    para_char_length = 280
+    num_para_min = 3
+    num_para_max = 5
+    
     client = Anthropic(
         api_key=anthropic_api_key
     )
@@ -106,7 +109,7 @@ def fetch_fact_with_anthropic(person, max_length=150):
     messages=[
         {
             "role": "user",
-            "content": f"Tell me some interesting tid-bits about {person} in around {max_length} characters. Separate the tib-bits into paragraphs with around 60 words. Consider each paragraph as a single tweet in a thread of tweets. In the first paragraph, use pronouns to refer to this person, not name. Use appropriate symbols at end of each paragraph along with thread number showing that it is part of a thread. There should be at least 3 paragraphs and maximum of 5. Design the whole text in a way so that it will be enjoyable to read as a tweet. At the end of the first paragraph, add the hash tags #BornToday #OnThisDay and the most appropriate hash tag with the name of the person. Please note that only the first 280 characters will be visible on the Twitter timeline, so the first 280 characters should attract other users to engage in the tweet. Also include relevant hashtags in between to get more reach.",
+            "content": f"Tell me some interesting tid-bits about {person} in around {max_length} characters, but avoid cringe-worthy adjectives and superlatives. Separate the tib-bits into paragraphs with less than {para_char_length} characters. Consider each paragraph as a single tweet in a thread of tweets. In the first paragraph, use pronouns to refer to this person, not name. Use appropriate symbols at the end of each paragraph along with thread number showing that it is part of a thread. There should be at least {num_para_min} paragraphs and maximum of {num_para_max}. Design the whole text in a way so that it will be enjoyable to read as a tweet. At the end of the first paragraph, add the hash tags #BornToday #OnThisDay and the most appropriate hash tag with the name of the person. Also include relevant hashtags in between to get more reach. The total length of one paragraph including hashtags should not exceed {para_char_length} characters. You can use the Twitter lingo to shorten words and sentences to include more information in less characters. Also, after all the paragraphs about facts, add one concluding paragraph wishing the person Happy Birthday.",
         }
     ],
     model="claude-3-7-sonnet-20250219",
