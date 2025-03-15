@@ -27,9 +27,13 @@ client = tweepy.Client(
     access_token_secret=access_token_secret
 )
 
-# We still need v1.1 API for media upload
-auth = tweepy.OAuthHandler(client_id, client_secret)
-auth.set_access_token(access_token, access_token_secret)
+# Authentication for v1.1 API for media upload
+auth = tweepy.OAuth1UserHandler(
+    consumer_key=client_id,
+    consumer_secret=client_secret,
+    access_token=access_token,
+    access_token_secret=access_token_secret
+)
 api = tweepy.API(auth)
 
 def load_tweeted_people():
