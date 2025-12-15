@@ -10,6 +10,5 @@ If you find this Twitter bot helpful, please consider supporting me:
   <tr>
     <td><img src="qr-code.png" width="150"/></td>
     <td><a href='https://ko-fi.com/N4N61MYBBT' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi6.png?v=6' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a></td>
-    <td><a href='https://onlychai.neocities.org/support.html?name=Chandu&upi=chandujr-2%40okhdfcbank' target='_blank'><img height='36' style='border:0px;height:36px;' src='buy-indian.png' border='0' alt='Use UPI Payment Gateway' /></a></td>
   </tr>
 </table>
