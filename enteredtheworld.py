@@ -1,7 +1,6 @@
 import tweepy
 import requests
 from datetime import datetime, date
-import time
 import os
 from dotenv import load_dotenv
 from io import BytesIO
@@ -27,9 +26,13 @@ client = tweepy.Client(
     access_token_secret=access_token_secret
 )
 
-# We still need v1.1 API for media upload
-auth = tweepy.OAuthHandler(client_id, client_secret)
-auth.set_access_token(access_token, access_token_secret)
+# Authentication for v1.1 API for media upload
+auth = tweepy.OAuth1UserHandler(
+    consumer_key=client_id,
+    consumer_secret=client_secret,
+    access_token=access_token,
+    access_token_secret=access_token_secret
+)
 api = tweepy.API(auth)
 
 def load_tweeted_people():
@@ -89,7 +92,11 @@ def download_image(url):
         print(f"Failed to download image. Status code: {response.status_code}")
         return None
 
-def fetch_fact_with_anthropic(text, max_length=150):
+def fetch_fact_with_anthropic(person, max_length=150):
+    para_char_length = 280
+    num_para_min = 3
+    num_para_max = 5
+    
     client = Anthropic(
         api_key=anthropic_api_key
     )
@@ -102,7 +109,7 @@ def fetch_fact_with_anthropic(text, max_length=150):
     messages=[
         {
             "role": "user",
-            "content": f"Tell me the most interesting tid-bit about {text} in around {max_length} characters. Use pronouns to refer to this person, not name.",
+            "content": f"Tell me some interesting tid-bits about {person} in around {max_length} characters, but avoid cringe-worthy adjectives and superlatives. Separate the tib-bits into paragraphs with less than {para_char_length} characters. Consider each paragraph as a single tweet in a thread of tweets. In the first paragraph, use pronouns to refer to this person, not name. Use appropriate symbols at the end of each paragraph along with thread number showing that it is part of a thread. There should be at least {num_para_min} paragraphs and maximum of {num_para_max}. Design the whole text in a way so that it will be enjoyable to read as a tweet. At the end of the first paragraph, add the hash tags #BornToday #OnThisDay and the most appropriate hash tag with the name of the person. Also include relevant hashtags in between to get more reach. The total length of one paragraph including hashtags should not exceed {para_char_length} characters. You can use the Twitter lingo to shorten words and sentences to include more information in less characters. Also, after all the paragraphs about facts, add one concluding paragraph wishing the person Happy Birthday.",
         }
     ],
     model="claude-3-7-sonnet-20250219",
@@ -110,25 +117,27 @@ def fetch_fact_with_anthropic(text, max_length=150):
     print(f"Anthropic response: {message.content}")
     return message.content[0].text
 
-def create_tweet(birth_info, text):
-    max_summary_length = 280 - len(birth_info) - len("\n\n\n\n#BornToday #OnThisDay")
-    while True:
-        summary = fetch_fact_with_anthropic(text, max_summary_length)
-        tweet = f"{birth_info}\n\n{summary}\n\n#BornToday #OnThisDay"
+def create_tweet(birth_info, person):
+    max_facts_length = 4000
+    facts_text = fetch_fact_with_anthropic(person, max_facts_length)
+    # Split the text into paragraphs (split on empty lines)
+    paragraphs = facts_text.strip().split("\n\n")
+    # Remove any empty strings from the list (if any)
+    paragraphs = [p.strip() for p in paragraphs if p.strip()]
+    paragraphs[0] = f"{birth_info}\n\n{paragraphs[0]}"
+    return paragraphs
 
-        if len(tweet) <= 280:
-            print("Generated fact is within 280 characters.")
-            return tweet
-
-        # If still too long, reduce max_summary_length and try again
-        max_summary_length -= 10  # Reduce by 10 characters each iteration
-        print(f"Tweet too long. Retrying fact gen with {max_summary_length} characters")
-
-def tweet_birth_with_image():
+def tweet_birth_with_image(retries):
     print("Getting Wiki info...")
-    birth_info, image_url, text = get_notable_birth()
+    
+    retries += 1
+    if retries > 5:
+        print("Retry limit exceeded.")
+        return
+    
+    birth_info, image_url, person = get_notable_birth()
 
-    if birth_info and image_url and text:
+    if birth_info and image_url and person:
         media_ids = []
         image = download_image(image_url)
         if image:
@@ -142,31 +151,46 @@ def tweet_birth_with_image():
                 media_ids.append(media.media_id)
             except Exception as e:
                 print(f"Error handling image: {e}. Retrying with another person.")
-                return tweet_birth_with_image()
+                return tweet_birth_with_image(retries)
 
             try:
-                tweet_text = create_tweet(birth_info, text)
-                response = client.create_tweet(text=tweet_text, media_ids=media_ids)
-                print(f"Tweeted: {tweet_text}")
-                print("Tweet includes an image.")
+                tweet_texts = create_tweet(birth_info, person)
+                # Get your own user ID (needed to exclude mentions)
+                me = client.get_me(user_fields=["id"])
+                user_id = me.data.id
+                previous_tweet_id = None
+                for i, text in enumerate(tweet_texts):
+                    response = client.create_tweet(
+                        text=text,
+                        in_reply_to_tweet_id=previous_tweet_id,
+                        exclude_reply_user_ids=[user_id],  # Prevents @mention
+                        media_ids=media_ids if i == 0 else None
+                    )
+                    
+                    # Update previous_tweet_id for the next iteration
+                    previous_tweet_id = response.data["id"]
+                print("Tweet posted.")
             except tweepy.errors.TweepError as e:
                 print(f"Error posting tweet: {e}")
         else:
             print("Failed to download image. Retrying with another person.")
-            return tweet_birth_with_image()
+            return tweet_birth_with_image(retries)
     else:
         print("No suitable birth information found. Retrying...")
-        return tweet_birth_with_image()
+        return tweet_birth_with_image(retries)
 
 def main():
-    tweet_birth_with_image()
+    retries = 0
+    tweet_birth_with_image(retries)
     # test_tweet_birth_with_image()
 
 # def test_tweet_birth_with_image():
-#     birth_info, image_url, text = get_notable_birth()
-#     if birth_info and image_url and text:
-#         tweet_text = create_tweet(birth_info, text)
-#         print(f"Would tweet: {tweet_text}")
+#     birth_info, image_url, person = get_notable_birth()
+#     if birth_info and image_url and person:
+#         tweet_texts = create_tweet(birth_info, person)
+#         print("Would tweet:\n")
+#         for i, text in enumerate(tweet_texts):
+#             print(f"{text}\n")
 #         print(f"Image URL: {image_url}")
 #     else:
 #         print("No birth information found for today.")
